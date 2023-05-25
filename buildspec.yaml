@@ -1,0 +1,65 @@
+Resources:  
+  fastapi:  
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Name: fastapi-example
+      Description: Automatizacion fastapi-example
+      ServiceRole: >-
+        arn:aws:iam::397443655531:role/service-role/codebuild-smartverse-service-role
+      Source:
+        Type: GITHUB
+        Location: 'https://github.com/lesarmiento37/fastapi-example.git'
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: python3.9
+                docker: 19
+              commands:
+                - echo first stage
+                - pip install --no-cache-dir --upgrade -r requirements.txt
+                - uvicorn app.main:app --host 0.0.0.0 --port 8000
+                - python -m unittest discover tests
+            pre_build:
+              commands:
+                - docker login --username $userd -p $dockerp
+                - export SONAR_SCANNER_VERSION=4.7.0.2747
+                - export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux
+                - curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux.zip
+                - unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+                - export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+                - export SONAR_SCANNER_OPTS="-server"
+                - export SONAR_TOKEN="62d0600e9c5f0d6b177164e7fddaeb0c709c2a6c"
+            build:
+              commands:
+                - echo Entered the build phase...
+                - sonar-scanner -Dsonar.organization=lesarmiento37 -Dsonar.projectKey=lesarmiento37_fastapi-example -Dsonar.sources=. -Dsonar.host.url=https://sonarcloud.io
+                #- cd $CODEBUILD_SRC_DIR
+            post_build:
+              commands:
+                - NEW_VERSION=$(git log --format="%h" -n 1)-$(date '+%d%H%M%S')
+                - echo "New Version $NEW_VERSION"
+                - docker build -t leonardos37/fastapi-example:v$NEW_VERSION .
+                - docker push leonardos37/fastapi-example:v$NEW_VERSION
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: 'aws/codebuild/amazonlinux2-x86_64-standard:3.0'
+        PrivilegedMode: true
+        ComputeType: BUILD_GENERAL1_LARGE
+        EnvironmentVariables:
+          - Name: dockerp
+            Type: PARAMETER_STORE
+            Value: dockerp
+          - Name: userd
+            Type: PARAMETER_STORE
+            Value: dockeru
+      SourceVersion: main
+      #Triggers: 
+        #Webhook: true 
+        #FilterGroups: 
+          #Type: EVENT 
+          #Pattern: PUSH 
+          #ExcludeMatchedPattern: false  
